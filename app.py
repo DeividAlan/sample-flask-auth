@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from models.user import User
 from database import db
-from flask_login import LoginManager, login_user, logout_user, login_required
+from flask_login import LoginManager, login_user, current_user, logout_user, login_required
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "your_secret_key"
@@ -29,15 +29,15 @@ def login():
 
         if user and user.password == password:
             login_user(user)
-            return jsonify("message: user authorized!")
+            return jsonify({"message": "user authorized!"})
     
-    return jsonify("message: username and password is required!"), 400
+    return jsonify({"message": "username and password is required!"}), 404
 
 @app.route("/logout", methods=["GET"])
 @login_required
 def logout():
     logout_user()
-    return jsonify("message: You have been successfully logged out.")
+    return jsonify({"message": "You have been successfully logged out."})
 
 @app.route("/user", methods=["POST"])
 def create_user():
@@ -49,9 +49,54 @@ def create_user():
         user = User(username=username, password=password)
         db.session.add(user)
         db.session.commit()
-        return jsonify("message: User created!")
+        return jsonify({"message": "User created!"})
     
-    return jsonify("message: username and password is required!"), 400
+    return jsonify({"message": "username and password is required!"}), 404
+
+@app.route("/user/<int:user_id>", methods=["GET"])
+@login_required
+def read_user(user_id):
+    user = User.query.get(user_id)
+
+    if user:
+        return jsonify({ 
+		    "id": user.id,
+		    "username": user.username
+		})
+    
+    return jsonify({"message": "User not found!"}), 404
+
+@app.route("/user/<int:user_id>", methods=["put"])
+@login_required
+def update_user(user_id):
+    user = User.query.get(user_id)
+
+    if user:
+        data = request.json
+        password = data.get("password")
+        if password:
+            user.password = password
+            db.session.commit()
+            return jsonify({"message": "User updated!"})
+
+        return jsonify({"message": "password is required!"}), 404
+
+    return jsonify({"message": "User not found!"}), 404
+
+@app.route("/user/<int:user_id>", methods=["DELETE"])
+@login_required
+def delete_user(user_id):
+    if user_id == current_user.id:
+        return jsonify({"message": "You cannot delete your own user account!"}), 403
+    
+    user = User.query.get(user_id)
+
+    if user:
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"message": f"User {user_id} deleted!"})
+    
+    return jsonify({"message": "User not found!"}), 404
 
 @app.route("/hello-word", methods=["GET"])
 def hello_word():
