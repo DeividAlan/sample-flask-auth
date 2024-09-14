@@ -2,10 +2,12 @@ from flask import Flask, request, jsonify
 from models.user import User
 from database import db
 from flask_login import LoginManager, login_user, current_user, logout_user, login_required
+import bcrypt
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "your_secret_key"
-app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///database.db"
+# app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///database.db"
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:admin123@127.0.0.1:3306/flask-crud'
 
 login_manager = LoginManager()
 
@@ -27,7 +29,7 @@ def login():
     if username and password:
         user = User.query.filter(User.username == username).first()
 
-        if user and user.password == password:
+        if user and bcrypt.checkpw(str.encode(password), str.encode(user.password)):
             login_user(user)
             return jsonify({"message": "user authorized!"})
     
@@ -46,7 +48,8 @@ def create_user():
     password = data.get("password")
 
     if username and password:
-        user = User(username=username, password=password)
+        password_hashed = bcrypt.hashpw(str.encode(password), bcrypt.gensalt())
+        user = User(username=username, password=password_hashed, role='user')
         db.session.add(user)
         db.session.commit()
         return jsonify({"message": "User created!"})
@@ -69,13 +72,16 @@ def read_user(user_id):
 @app.route("/user/<int:user_id>", methods=["put"])
 @login_required
 def update_user(user_id):
+    if user_id != current_user.id and current_user.role == 'user':
+        return jsonify({"message": "You can't update the password for this user!"}), 403
+
     user = User.query.get(user_id)
 
     if user:
         data = request.json
         password = data.get("password")
         if password:
-            user.password = password
+            user.password = bcrypt.hashpw(str.encode(password), bcrypt.gensalt())
             db.session.commit()
             return jsonify({"message": "User updated!"})
 
@@ -86,6 +92,9 @@ def update_user(user_id):
 @app.route("/user/<int:user_id>", methods=["DELETE"])
 @login_required
 def delete_user(user_id):
+    if current_user.role != 'admin':
+        return jsonify({"message": "You do not have permission to delete users!"}), 403
+
     if user_id == current_user.id:
         return jsonify({"message": "You cannot delete your own user account!"}), 403
     
